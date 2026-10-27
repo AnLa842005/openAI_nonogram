@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 import sys
 import time
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut
@@ -34,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from ..board_logic import PlaySession, PlayTool, check_board
 from ..dfs_solver import DFSSolver
+from ..heuristic_solver import HeuristicSolver
 from ..models import (
     FinishReason,
     Puzzle,
@@ -44,11 +46,13 @@ from ..models import (
     unknown_board,
 )
 from ..samples import CROSS_5X5
-from ..solvers import MockSolver, SolverWorker, WorkerEvent, WorkerEventKind
+from ..solvers import SolverWorker, WorkerEvent, WorkerEventKind
 from .board_widget import BoardWidget
 from .control_panel import ControlPanel
 from .dialogs import RandomPuzzleDialog
 from .theme import apply_theme, standard_icon
+
+EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples" / "puzzle-nonograms"
 
 
 class MainWindow(QMainWindow):
@@ -61,7 +65,6 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(900, 650)
 
         self.puzzle = CROSS_5X5
-        self.demo_compatible = True
         self.play_session = PlaySession(self.puzzle)
         self.visual_board = unknown_board(self.puzzle)
         self.mode = "Play"
@@ -133,8 +136,20 @@ class MainWindow(QMainWindow):
         random_action = new_menu.addAction("Random Puzzle…")
         random_action.triggered.connect(self._new_random_puzzle)
         new_menu.addSeparator()
-        sample_action = new_menu.addAction("Cross 5×5 · Demo sample")
+        sample_action = new_menu.addAction("Cross 5×5 sample")
         sample_action.triggered.connect(self._load_cross_sample)
+        example_paths = sorted(
+            EXAMPLES_DIR.glob("*.json"),
+            key=lambda path: tuple(int(n) for n in path.stem.split("_")[0].split("x")),
+        )
+        if example_paths:
+            examples_menu = new_menu.addMenu("Examples · puzzle-nonograms.com")
+            for path in example_paths:
+                label = path.stem.replace("_special_", " · Special ").replace("x", "×")
+                action = examples_menu.addAction(label)
+                action.triggered.connect(
+                    lambda _checked=False, path=path: self._load_example(path)
+                )
         new_button.setMenu(new_menu)
         self.toolbar.addWidget(new_button)
 
@@ -273,28 +288,36 @@ class MainWindow(QMainWindow):
         if not self._confirm_replace_puzzle():
             return
         generated = dialog.result
-        self._replace_puzzle(generated.puzzle, demo_compatible=False)
+        self._replace_puzzle(generated.puzzle)
         self._set_play_message(
             f"Generated a puzzle with seed {generated.seed}. It has at least one solution; uniqueness was not checked."
         )
 
     def _load_cross_sample(self) -> None:
         if self._confirm_replace_puzzle():
-            self._replace_puzzle(CROSS_5X5, demo_compatible=True)
+            self._replace_puzzle(CROSS_5X5)
+
+    def _load_example(self, path: Path) -> None:
+        self._load_puzzle_file(str(path))
 
     def _open_json(self) -> None:
         path, _selected = QFileDialog.getOpenFileName(
-            self, "Open Nonograms Puzzle", "", "JSON files (*.json);;All files (*)"
+            self,
+            "Open Nonograms Puzzle",
+            str(EXAMPLES_DIR) if EXAMPLES_DIR.is_dir() else "",
+            "JSON files (*.json);;All files (*)",
         )
-        if not path:
-            return
+        if path:
+            self._load_puzzle_file(path)
+
+    def _load_puzzle_file(self, path: str) -> None:
         try:
             puzzle = Puzzle.from_json_file(path)
         except PuzzleValidationError as exc:
             QMessageBox.critical(self, "Invalid Input", str(exc))
             return
         if self._confirm_replace_puzzle():
-            self._replace_puzzle(puzzle, demo_compatible=False)
+            self._replace_puzzle(puzzle)
 
     def _save_json(self) -> None:
         safe_name = "".join(
@@ -331,11 +354,10 @@ class MainWindow(QMainWindow):
         )
         return answer == QMessageBox.StandardButton.Yes
 
-    def _replace_puzzle(self, puzzle: Puzzle, demo_compatible: bool) -> None:
+    def _replace_puzzle(self, puzzle: Puzzle) -> None:
         self._cancel_visual_session(increment=True)
         self._pause_play_timer()
         self.puzzle = puzzle
-        self.demo_compatible = demo_compatible and MockSolver.supports(puzzle)
         self.play_session = PlaySession(puzzle)
         self.visual_board = unknown_board(puzzle)
         self.play_elapsed = 0.0
@@ -529,30 +551,21 @@ class MainWindow(QMainWindow):
         self.panel.marked_metric.value_label.setText(f"{count} / {total}")
 
     def _solver_selected(self, selected: str) -> None:
-        self.panel.demo_badge.setVisible(selected == ControlPanel.SOLVER_DEMO)
-        if selected == ControlPanel.SOLVER_HEURISTIC:
-            self._set_visual_status("Unavailable", "warning")
-            self._set_visual_message(f"{selected} is not available in this version.")
-        elif selected == ControlPanel.SOLVER_DEMO and not self.demo_compatible:
-            self._set_visual_status("Unavailable", "warning")
-            self._set_visual_message(
-                "The mock demo is only available for the built-in Cross 5x5 puzzle."
-            )
-        elif self.visual_state == "idle":
+        if self.visual_state == "idle":
             self._set_visual_status("Ready", "neutral")
             if selected == ControlPanel.SOLVER_DFS:
                 self._set_visual_message(
                     "DFS is ready to search from a fresh UNKNOWN board."
                 )
             else:
-                self._set_visual_message("The simulated demo is ready to run.")
+                self._set_visual_message(
+                    "The heuristic solver is ready to propagate from a fresh UNKNOWN board."
+                )
         self._update_visual_controls()
 
     def _visual_solver_available(self) -> bool:
         selected = self.panel.solver_combo.currentText()
-        return selected == ControlPanel.SOLVER_DFS or (
-            selected == ControlPanel.SOLVER_DEMO and self.demo_compatible
-        )
+        return selected in (ControlPanel.SOLVER_DFS, ControlPanel.SOLVER_HEURISTIC)
 
     def _run_visualizer(self) -> None:
         if self.mode != "Visualize" or not self._visual_solver_available():
@@ -566,7 +579,10 @@ class MainWindow(QMainWindow):
             return
         self._cancel_visual_session(increment=True)
         selected = self.panel.solver_combo.currentText()
-        solver = DFSSolver() if selected == ControlPanel.SOLVER_DFS else MockSolver()
+        if selected == ControlPanel.SOLVER_DFS:
+            solver = DFSSolver()
+        else:
+            solver = HeuristicSolver()
         self.worker = SolverWorker(solver, self.puzzle, self.session_id)
         self.visual_board = unknown_board(self.puzzle)
         self.step_number = 0

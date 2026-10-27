@@ -4,9 +4,9 @@ A Python 3 desktop application built with **PySide6 Widgets** for generating Non
 
 The UI uses `QMainWindow`, `QPainter`, `QScrollArea`, Qt stylesheets, and `QTimer`. It does not use QML, a webview, or JavaScript.
 
-The project includes a real deterministic DFS solver. `MockSolver` remains a
-separate simulated demo for the built-in `Cross 5x5` sample. BFS and the
-heuristic solver are not implemented.
+The project includes two real deterministic solvers: a blind row-by-row DFS
+and a heuristic solver (MRV-guided search with constraint propagation).
+BFS is not implemented.
 
 ## Install and run on Windows
 
@@ -53,9 +53,25 @@ Remove-Item Env:QT_QPA_PLATFORM
 
 Play and Visualize boards are stored separately. Switching modes preserves Play progress, and the Play timer pauses while Visualize mode is active.
 
+## Reference examples from puzzle-nonograms.com
+
+`examples/puzzle-nonograms/` holds real puzzles downloaded from
+[puzzle-nonograms.com](https://www.puzzle-nonograms.com/), one per size:
+5×5, 10×10, 15×15, 20×20, 25×25, the 25×30 Special Daily, and the 30×30 Special Weekly.
+Load them from **New Puzzle → Examples**, or with **Open**.
+
+Each file keeps the site's raw `task` string and `hashed_solution` in
+`metadata`. The site computes `hashed_solution = md5(task + solution)`, where
+`task` lists column clues first, then row clues (`/` between lines, `.`
+between groups, `0` for an empty line), and `solution` lists the cells row by
+row as `y` (filled) or `n` (empty). `tests/test_examples.py` recomputes that
+hash from each solver's board. A match means the solver found exactly the
+site's official answer, not merely some board that fits the clues. Site
+puzzles have unique solutions; random puzzles from the generator below may not.
+
 ## Random puzzle generation
 
-The **New Puzzle** menu provides the random-puzzle dialog and the `Cross 5x5` sample:
+The **New Puzzle** menu provides the random-puzzle dialog, the `Cross 5x5` sample, and the examples above:
 
 - 5×5, 10×10, and 15×15 presets;
 - custom dimensions from 2 to 30 in each direction;
@@ -100,8 +116,7 @@ Exported files do not contain the source solution. Validation checks data types,
 ## Visualize mode and worker behavior
 
 - Visualize always starts from an `UNKNOWN` board; continuing from the Play board is not supported.
-- The demo is enabled only for the built-in `Cross 5x5` sample. It cannot run on generated or imported puzzles.
-- DFS is available for every valid puzzle. Heuristic remains disabled.
+- DFS and Heuristic are available for every valid puzzle.
 - Run/Pause, Next Step, and Reset are enabled according to the current session state.
 - Pause stops event playback; each Next Step action consumes exactly one event.
 - Animation uses `QTimer` on the Qt main thread. The application does not call `time.sleep()` or run a `processEvents()` loop.
@@ -125,19 +140,17 @@ Minimum actions: `START`, `TRY`, `ACCEPT`, `REJECT`, `BACKTRACK`, `SOLUTION`, an
 - Only `SOLUTION` announces that a solution was found.
 - `FINISH` distinguishes `SOLVED`, `NO_SOLUTION`, `CANCELLED`,
   `LIMIT_REACHED`, and `ERROR`. The original `COMPLETED_AFTER_SOLUTION` and
-  `EXHAUSTED` reasons remain available for legacy adapters such as the demo.
+  `EXHAUSTED` reasons remain available for legacy adapters such as
+  `examples/heuristic_adapter_example.py`.
 - A solver must check `cancel_event` frequently and must never call QWidget or QPainter APIs from its worker thread.
 - `SearchStep` freezes the board at the event boundary, preventing later mutation from changing older snapshots.
 
-See [`examples/heuristic_adapter_example.py`](examples/heuristic_adapter_example.py) for a minimal heuristic adapter.
+See [`examples/heuristic_adapter_example.py`](examples/heuristic_adapter_example.py) for a minimal adapter around an external engine.
 
 The solver implementations are available at:
 
-- [`nonogram_visualizer/dfs_solver.py`](nonogram_visualizer/dfs_solver.py) — implemented DFS and headless benchmark
-- [`nonogram_visualizer/heuristic_solver.py`](nonogram_visualizer/heuristic_solver.py)
-
-The heuristic template deliberately raises `NotImplementedError` and remains
-disabled in the UI.
+- [`nonogram_visualizer/dfs_solver.py`](nonogram_visualizer/dfs_solver.py) — DFS, shared benchmark, and shared CLI
+- [`nonogram_visualizer/heuristic_solver.py`](nonogram_visualizer/heuristic_solver.py) — heuristic search
 
 ## DFS model and traversal
 
@@ -166,14 +179,43 @@ Pause, Next Step, and Reset. Event snapshots are immutable and flow through the
 existing bounded worker queue; the UI does not retain the complete search
 history.
 
-## Headless DFS and benchmark
+## Heuristic model and traversal
 
-The headless path uses the same DFS core with tracing disabled, so it does not
-construct a board snapshot or message for every search step:
+The heuristic solver also starts from a completely `UNKNOWN` board and uses
+the same pattern generator, but stores each pattern as a bitmask (bit `i` set
+means cell `i` of the line is filled).
+
+1. **Propagation (line solving).** A queue holds the lines whose cells changed.
+   For each queued line, candidates inconsistent with the known cells are
+   removed with one test per pattern, `(pattern ^ filled) & known == 0`.
+   Cells set in every remaining candidate (AND of all patterns) become
+   `FILLED`; cells set in none (NOT of the OR) become `EMPTY`. Each newly fixed
+   cell queues its crossing line. An empty domain is a contradiction.
+2. **Branching.** When propagation reaches a fixed point with undecided cells,
+   the solver picks the row *or* column with the fewest remaining candidates
+   (Minimum Remaining Values). Within it, it guesses the undecided cell on
+   which the candidates agree most, trying the majority value first. Each node
+   therefore has at most two children.
+3. **Backtracking.** Every cell and domain change is pushed onto a trail. A
+   failed branch pops the trail back to its mark instead of copying the board
+   or domains.
+
+Many published puzzles, including `Cross 5x5`, are solved by root propagation
+alone, so `nodes_generated` is `0`. The limitation is that propagation
+reasons about one line at a time. On ambiguous puzzles with weak deductions
+(for example, random 30×30 boards at 40% density) the search can still go
+deep and backtrack for minutes.
+
+## Headless benchmark
+
+The headless path uses the same solver core with tracing disabled, so it does
+not construct a board snapshot or message for every search step. Both solvers
+share one benchmark and CLI, so they report the same fields:
 
 ```powershell
 python -m nonogram_visualizer.dfs_solver examples/cross_5x5.json
 python -m nonogram_visualizer.dfs_solver examples/cross_5x5.json --memory
+python -m nonogram_visualizer.heuristic_solver examples/cross_5x5.json --memory
 ```
 
 `solver_time_ms` uses `perf_counter` and includes pattern generation plus DFS,
@@ -186,10 +228,10 @@ not whole-process RSS. Without `--memory`, unavailable peak memory is shown as
 
 | Field | Meaning and unit |
 | --- | --- |
-| `nodes_expanded` | Valid incomplete states whose next-row patterns DFS begins to visit, including the root. |
-| `nodes_generated` | Every attempted row-pattern assignment, including immediately rejected patterns; the root is not generated. |
-| `backtracks` | Accepted choices abandoned because their child branch failed; immediate `REJECT` patterns are not counted. |
-| `max_depth` | Greatest number of simultaneously assigned rows reached. |
+| `nodes_expanded` | Valid incomplete states whose children the solver begins to visit. For DFS this includes the root. For Heuristic it counts only states where propagation stalled and a guess was needed. |
+| `nodes_generated` | Every attempted choice, including immediately rejected ones; the root is not generated. DFS: row patterns. Heuristic: cell guesses. |
+| `backtracks` | Accepted choices abandoned because their child branch failed; immediate `REJECT` choices are not counted. |
+| `max_depth` | Greatest number of simultaneous choices: assigned rows for DFS, nested cell guesses for Heuristic. |
 | `solver_time_ms` | Solver computation time in milliseconds, excluding animation, Pause time, queue waiting, and UI work. |
 | `peak_memory_bytes` | Peak Python allocations in bytes from a separate headless `tracemalloc` run. |
 
@@ -208,9 +250,9 @@ nonogram_visualizer/
   generator.py           # Random generation and clue calculation
   board_logic.py         # Play operations, history, and validation
   samples.py             # Built-in puzzles
-  solvers.py             # Solver protocol, mock stream, and worker adapter
-  dfs_solver.py          # DFS core, event adapter, and headless benchmark
-  heuristic_solver.py    # Heuristic implementation template
+  solvers.py             # Solver protocol and worker adapter
+  dfs_solver.py          # DFS core, event adapter, shared benchmark and CLI
+  heuristic_solver.py    # MRV + propagation solver
   ui/
     board_widget.py      # Scalable QPainter board
     control_panel.py     # Play and Visualize controls
@@ -219,6 +261,7 @@ nonogram_visualizer/
     theme.py             # Stylesheet and generated icons
 examples/
   cross_5x5.json
+  puzzle-nonograms/      # Reference puzzles with official answer hashes
   heuristic_adapter_example.py
 tests/
 ```

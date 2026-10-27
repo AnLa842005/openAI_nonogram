@@ -10,9 +10,10 @@ import argparse
 import threading
 import time
 import tracemalloc
-from collections.abc import Generator, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterator, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
+from typing import Protocol
 
 from .generator import clues_for_line
 from .models import (
@@ -46,6 +47,16 @@ class SolveResult:
     board: BoardSnapshot
     stats: SearchStats
     message: str = ""
+
+
+class HeadlessSolver(Protocol):
+    """Solver that can also run without emitting visual trace events."""
+
+    def solve(
+        self,
+        puzzle: Puzzle,
+        cancel_event: threading.Event | None = None,
+    ) -> SolveResult: ...
 
 
 class _SearchCancelled(Exception):
@@ -455,16 +466,21 @@ class DFSSolver:
             return result
 
 
-def benchmark(puzzle: Puzzle, *, measure_memory: bool = False) -> SolveResult:
+def benchmark(
+    puzzle: Puzzle,
+    *,
+    measure_memory: bool = False,
+    solver_factory: Callable[[], HeadlessSolver] = DFSSolver,
+) -> SolveResult:
     """Run a cold, headless benchmark with optional separate memory run."""
 
-    result = DFSSolver().solve(puzzle)
+    result = solver_factory().solve(puzzle)
     if not measure_memory:
         return result
 
     tracemalloc.start()
     try:
-        memory_result = DFSSolver().solve(puzzle)
+        memory_result = solver_factory().solve(puzzle)
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
@@ -478,8 +494,10 @@ def benchmark(puzzle: Puzzle, *, measure_memory: bool = False) -> SolveResult:
     return replace(result, stats=replace(result.stats, peak_memory_bytes=peak))
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the Nonograms DFS headlessly.")
+def run_cli(solver_factory: Callable[[], HeadlessSolver], description: str) -> None:
+    """Shared headless entry point so every solver reports identical fields."""
+
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("puzzle", help="Path to a puzzle JSON file")
     parser.add_argument(
         "--memory",
@@ -488,7 +506,9 @@ def main() -> None:
     )
     args = parser.parse_args()
     puzzle = Puzzle.from_json_file(args.puzzle)
-    result = benchmark(puzzle, measure_memory=args.memory)
+    result = benchmark(
+        puzzle, measure_memory=args.memory, solver_factory=solver_factory
+    )
     print(f"status: {result.status.value}")
     print(f"nodes_generated: {result.stats.nodes_generated}")
     print(f"nodes_expanded: {result.stats.nodes_expanded}")
@@ -502,6 +522,10 @@ def main() -> None:
         for row in result.board:
             print("".join("1" if cell is CellState.FILLED else "0" for cell in row))
     raise SystemExit(0 if result.status is SolveStatus.SOLVED else 1)
+
+
+def main() -> None:
+    run_cli(DFSSolver, "Run the Nonograms DFS headlessly.")
 
 
 if __name__ == "__main__":

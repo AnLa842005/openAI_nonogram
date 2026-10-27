@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtGui import QFont, QFontDatabase, QIcon
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPalette
 from PySide6.QtWidgets import QApplication, QStyle
 
 COLORS = {
@@ -65,14 +66,6 @@ QLabel {{ color: {COLORS["text"]}; background: transparent; }}
 QLabel#muted {{ color: {COLORS["muted"]}; }}
 QLabel#sectionTitle {{ font-size: 13px; font-weight: 650; }}
 QLabel#metricValue {{ font-size: 16px; font-weight: 700; }}
-QLabel#demoBadge {{
-    color: #92400E;
-    background: #FEF3C7;
-    border: 1px solid #FDE68A;
-    border-radius: 6px;
-    padding: 5px 8px;
-    font-weight: 650;
-}}
 QLabel#statusBadge {{ border-radius: 7px; padding: 5px 9px; font-weight: 650; }}
 QLabel#statusBadge[statusKind="neutral"] {{ color: #475569; background: #E9EEF3; }}
 QLabel#statusBadge[statusKind="active"] {{ color: #1D4ED8; background: #DBEAFE; }}
@@ -110,10 +103,68 @@ QScrollBar::handle:vertical {{ background: #C3CBD5; border-radius: 5px; min-heig
 QScrollBar:horizontal {{ height: 11px; background: transparent; margin: 2px; }}
 QScrollBar::handle:horizontal {{ background: #C3CBD5; border-radius: 5px; min-width: 30px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+QDialog, QMessageBox {{ background: {COLORS["panel"]}; color: {COLORS["text"]}; }}
+QComboBox, QSpinBox, QLineEdit {{
+    color: {COLORS["text"]}; selection-background-color: #E0E7FF; selection-color: #3730A3;
+}}
+QComboBox:disabled, QSpinBox:disabled, QLineEdit:disabled {{ color: #94A3B8; background: #F1F5F9; }}
+QComboBox QAbstractItemView {{
+    background: {COLORS["panel"]}; color: {COLORS["text"]};
+    border: 1px solid {COLORS["border"]}; outline: none; padding: 4px;
+    selection-background-color: #EEF2FF; selection-color: #3730A3;
+}}
+QMenu {{
+    background: {COLORS["panel"]}; color: {COLORS["text"]};
+    border: 1px solid {COLORS["border"]}; border-radius: 8px; padding: 5px;
+}}
+QMenu::item {{ padding: 7px 22px 7px 12px; border-radius: 6px; background: transparent; }}
+QMenu::item:selected {{ background: #EEF2FF; color: #3730A3; }}
+QMenu::item:disabled {{ color: #94A3B8; }}
+QMenu::separator {{ height: 1px; background: {COLORS["border"]}; margin: 5px 8px; }}
+QToolTip {{
+    background: {COLORS["text"]}; color: white; border: none; border-radius: 6px; padding: 5px 8px;
+}}
 """
 
 
+def _light_palette() -> QPalette:
+    """Light palette for anything the stylesheet does not cover."""
+
+    palette = QPalette()
+    roles = {
+        QPalette.ColorRole.Window: COLORS["window"],
+        QPalette.ColorRole.WindowText: COLORS["text"],
+        QPalette.ColorRole.Base: COLORS["panel"],
+        QPalette.ColorRole.AlternateBase: "#F8FAFC",
+        QPalette.ColorRole.Text: COLORS["text"],
+        QPalette.ColorRole.PlaceholderText: COLORS["muted"],
+        QPalette.ColorRole.Button: COLORS["panel"],
+        QPalette.ColorRole.ButtonText: COLORS["text"],
+        QPalette.ColorRole.BrightText: "#FFFFFF",
+        QPalette.ColorRole.Highlight: "#E0E7FF",
+        QPalette.ColorRole.HighlightedText: "#3730A3",
+        QPalette.ColorRole.ToolTipBase: COLORS["text"],
+        QPalette.ColorRole.ToolTipText: "#FFFFFF",
+        QPalette.ColorRole.Link: COLORS["primary"],
+    }
+    for role, color in roles.items():
+        palette.setColor(role, QColor(color))
+    for role in (
+        QPalette.ColorRole.WindowText,
+        QPalette.ColorRole.Text,
+        QPalette.ColorRole.ButtonText,
+    ):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor("#94A3B8"))
+    return palette
+
+
 def apply_theme(app: QApplication) -> None:
+    # The theme is light-only. Without this, Windows dark mode hands Qt a dark
+    # palette and popups render light text on the stylesheet's white backgrounds.
+    hints = app.styleHints()
+    if hasattr(hints, "setColorScheme"):
+        hints.setColorScheme(Qt.ColorScheme.Light)
+    app.setPalette(_light_palette())
     families = set(QFontDatabase.families())
     family = "Segoe UI" if "Segoe UI" in families else QFont().defaultFamily()
     app.setFont(QFont(family, 10))

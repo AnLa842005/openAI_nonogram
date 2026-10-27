@@ -5,7 +5,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPointF
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMenu
 
 from nonogram_visualizer.generator import generate_random_puzzle
 from nonogram_visualizer.models import unknown_board
@@ -71,13 +71,27 @@ class MainWindowSessionTests(unittest.TestCase):
         window._run_visualizer()
         old_session = window.session_id
         generated = generate_random_puzzle(6, 7, 0.4, seed=77)
-        window._replace_puzzle(generated.puzzle, demo_compatible=False)
+        window._replace_puzzle(generated.puzzle)
         self.assertGreater(window.session_id, old_session)
         self.assertIsNone(window.worker)
         self.assertEqual(window.visual_board, unknown_board(generated.puzzle))
         self.assertEqual(window.panel.step_value.text(), "0")
-        self.assertFalse(window.panel.run_button.isEnabled())
+        self.assertEqual(window.panel.action_value.text(), "—")
         self.assertNotEqual(play_snapshot, window.play_session.board)
+        window.close()
+
+    def test_examples_menu_loads_every_website_puzzle(self) -> None:
+        window = MainWindow()
+        menu = window.findChild(QMenu)
+        examples = next(
+            action.menu() for action in menu.actions() if action.text().startswith("Examples")
+        )
+        self.assertGreaterEqual(len(examples.actions()), 6)
+        for action in examples.actions():
+            with self.subTest(example=action.text()):
+                action.trigger()
+                self.assertTrue(window.puzzle.name.startswith("puzzle-nonograms"))
+                self.assertEqual(window.visual_board, unknown_board(window.puzzle))
         window.close()
 
     def test_window_can_close_while_worker_is_active(self) -> None:
@@ -88,25 +102,28 @@ class MainWindowSessionTests(unittest.TestCase):
         window.close()
         self.assertTrue(all(not worker.is_alive for worker in window.retired_workers))
 
-    def test_dfs_is_available_and_finishes_through_ui_worker(self) -> None:
-        window = MainWindow()
-        window._change_mode("Visualize")
-        window.panel.solver_combo.setCurrentText(ControlPanel.SOLVER_DFS)
-        self.assertTrue(window._visual_solver_available())
-        self.assertTrue(window.panel.run_button.isEnabled())
+    def test_real_solvers_are_available_and_finish_through_ui_worker(self) -> None:
+        for selected in (ControlPanel.SOLVER_DFS, ControlPanel.SOLVER_HEURISTIC):
+            with self.subTest(solver=selected):
+                window = MainWindow()
+                window._change_mode("Visualize")
+                window.panel.solver_combo.setCurrentText(selected)
+                self.assertEqual(window.panel.solver_combo.currentText(), selected)
+                self.assertTrue(window._visual_solver_available())
+                self.assertTrue(window.panel.run_button.isEnabled())
 
-        window._run_visualizer()
-        deadline = time.monotonic() + 3.0
-        while window.visual_state != "finished" and time.monotonic() < deadline:
-            window.next_due = 0.0
-            window._tick()
-            self.app.processEvents()
-            time.sleep(0.001)
+                window._run_visualizer()
+                deadline = time.monotonic() + 3.0
+                while window.visual_state != "finished" and time.monotonic() < deadline:
+                    window.next_due = 0.0
+                    window._tick()
+                    self.app.processEvents()
+                    time.sleep(0.001)
 
-        self.assertEqual(window.visual_state, "finished")
-        self.assertEqual(window.panel.visual_status.text(), "Solved")
-        self.assertEqual(window.panel.action_value.text(), "FINISH")
-        window.close()
+                self.assertEqual(window.visual_state, "finished")
+                self.assertEqual(window.panel.visual_status.text(), "Solved")
+                self.assertEqual(window.panel.action_value.text(), "FINISH")
+                window.close()
 
 
 if __name__ == "__main__":

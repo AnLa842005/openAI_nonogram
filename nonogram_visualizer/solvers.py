@@ -1,4 +1,4 @@
-"""Solver contract, mock data, and a bounded worker-thread adapter."""
+"""Solver contract and a bounded worker-thread adapter."""
 
 from __future__ import annotations
 
@@ -9,16 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
-from .models import (
-    CellState,
-    FinishReason,
-    Puzzle,
-    SearchAction,
-    SearchFocus,
-    SearchStats,
-    SearchStep,
-    unknown_board,
-)
+from .models import Puzzle, SearchStep
 
 
 class Solver(Protocol):
@@ -31,115 +22,6 @@ class Solver(Protocol):
     ) -> Iterator[SearchStep]:
         """Yield immutable search snapshots in chronological order."""
         ...
-
-
-def _board(*rows: str) -> tuple[tuple[CellState, ...], ...]:
-    legend = {
-        "?": CellState.UNKNOWN,
-        ".": CellState.EMPTY,
-        "#": CellState.FILLED,
-    }
-    return tuple(tuple(legend[cell] for cell in row) for row in rows)
-
-
-@dataclass(slots=True)
-class MockSolver:
-    """Scripted UI demo. This is deliberately not a search algorithm."""
-
-    name: str = "Demo (MockSolver)"
-
-    @staticmethod
-    def supports(puzzle: Puzzle) -> bool:
-        return (
-            puzzle.name == "Cross 5x5"
-            and puzzle.row_clues == ((1,), (3,), (5,), (3,), (1,))
-            and puzzle.col_clues == ((1,), (3,), (5,), (3,), (1,))
-        )
-
-    def steps(
-        self, puzzle: Puzzle, cancel_event: threading.Event
-    ) -> Iterator[SearchStep]:
-        if not self.supports(puzzle):
-            raise ValueError(
-                "The demo is only available for the built-in Cross 5x5 puzzle."
-            )
-
-        scripted = [
-            SearchStep(
-                unknown_board(puzzle),
-                SearchAction.START,
-                message="Initialize the 5×5 demo board.",
-                stats=SearchStats(nodes_expanded=0, nodes_generated=1, backtracks=0),
-            ),
-            SearchStep(
-                _board("?#???", "?????", "?????", "?????", "?????"),
-                SearchAction.TRY,
-                SearchFocus("cell", row=0, col=1),
-                "Try a filled cell at row 1, column 2.",
-                SearchStats(nodes_expanded=1, nodes_generated=2, backtracks=0),
-            ),
-            SearchStep(
-                _board("?#???", ".###.", "?????", "?????", "?????"),
-                SearchAction.ACCEPT,
-                SearchFocus("row", row=1),
-                "Temporarily accept the configuration for row 2.",
-                SearchStats(nodes_expanded=2, nodes_generated=3, backtracks=0),
-            ),
-            SearchStep(
-                _board("?#???", ".###.", "#####", "?????", "?????"),
-                SearchAction.REJECT,
-                SearchFocus("column", col=1),
-                "Reject the branch: the first choice conflicts with column 2 clues.",
-                SearchStats(nodes_expanded=3, nodes_generated=3, backtracks=0),
-            ),
-            SearchStep(
-                _board("?????", ".###.", "#####", "?????", "?????"),
-                SearchAction.BACKTRACK,
-                SearchFocus("cell", row=0, col=1),
-                "Backtrack and undo the incorrect choice in row 1.",
-                SearchStats(nodes_expanded=3, nodes_generated=3, backtracks=1),
-            ),
-            SearchStep(
-                _board("..#..", ".###.", "#####", "?????", "?????"),
-                SearchAction.TRY,
-                SearchFocus("row", row=0),
-                "Try the correct configuration for row 1.",
-                SearchStats(nodes_expanded=4, nodes_generated=4, backtracks=1),
-            ),
-            SearchStep(
-                _board("..#..", ".###.", "#####", ".###.", "?????"),
-                SearchAction.ACCEPT,
-                SearchFocus("row", row=3),
-                "Accept row 4 after checking the column constraints.",
-                SearchStats(nodes_expanded=5, nodes_generated=5, backtracks=1),
-            ),
-            SearchStep(
-                _board("..#..", ".###.", "#####", ".###.", "..#.."),
-                SearchAction.SOLUTION,
-                SearchFocus("state", label="goal"),
-                "A valid solution was found in the simulated demo data.",
-                SearchStats(nodes_expanded=6, nodes_generated=6, backtracks=1),
-            ),
-            SearchStep(
-                _board("..#..", ".###.", "#####", ".###.", "..#.."),
-                SearchAction.FINISH,
-                message="The demo stream finished after the SOLUTION event.",
-                stats=SearchStats(nodes_expanded=6, nodes_generated=6, backtracks=1),
-                finish_reason=FinishReason.COMPLETED_AFTER_SOLUTION,
-            ),
-        ]
-
-        for step in scripted:
-            if cancel_event.is_set():
-                yield SearchStep(
-                    step.board,
-                    SearchAction.FINISH,
-                    message="The solver session was cancelled.",
-                    stats=step.stats,
-                    finish_reason=FinishReason.CANCELLED,
-                )
-                return
-            yield step
 
 
 class WorkerEventKind(str, Enum):

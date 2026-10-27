@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -65,9 +64,8 @@ class MetricCard(QFrame):
 class ControlPanel(QWidget):
     mode_changed = Signal(str)
 
-    SOLVER_DEMO = "Demo (MockSolver)"
     SOLVER_DFS = "DFS"
-    SOLVER_HEURISTIC = "Heuristic — not implemented"
+    SOLVER_HEURISTIC = "Heuristic (MRV + propagation)"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -176,19 +174,11 @@ class ControlPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
         solver_card = self._card("Solver")
-        self.demo_badge = QLabel("DEMO — SIMULATED DATA · Not a solving algorithm")
-        self.demo_badge.setObjectName("demoBadge")
-        self.demo_badge.setWordWrap(True)
-        solver_card.layout().addWidget(self.demo_badge)
         self.solver_combo = QComboBox()
-        self.solver_combo.addItems(
-            (self.SOLVER_DEMO, self.SOLVER_DFS, self.SOLVER_HEURISTIC)
-        )
-        model = self.solver_combo.model()
-        if isinstance(model, QStandardItemModel):
-            model.item(2).setEnabled(False)
+        self.solver_combo.addItems((self.SOLVER_DFS, self.SOLVER_HEURISTIC))
         self.solver_combo.setToolTip(
-            "DFS is a real row-by-row solver; Heuristic is not implemented yet"
+            "DFS assigns rows top to bottom; Heuristic propagates line "
+            "constraints and guesses cells in MRV order"
         )
         solver_card.layout().addWidget(self.solver_combo)
         note = QLabel(
@@ -243,7 +233,7 @@ class ControlPanel(QWidget):
             self.action_value, 1, 1, alignment=Qt.AlignmentFlag.AlignRight
         )
         event_card.layout().addLayout(event_grid)
-        self.visual_message = QLabel("The demo is ready to run.")
+        self.visual_message = QLabel("DFS is ready to search from a fresh UNKNOWN board.")
         self.visual_message.setWordWrap(True)
         self.visual_message.setObjectName("muted")
         event_card.layout().addWidget(self.visual_message)

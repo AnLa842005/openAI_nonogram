@@ -1,4 +1,4 @@
-"""Built-in puzzles. Mock search data is kept separately in solvers.py."""
+"""Built-in puzzles."""
 
 from .models import Puzzle
 
