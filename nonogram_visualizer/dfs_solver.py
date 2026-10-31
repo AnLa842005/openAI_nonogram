@@ -1,8 +1,4 @@
-"""Deterministic row-by-row DFS solver for Nonograms.
-
-The same search core powers the visual event stream and the headless runner.
-It deliberately uses no row reordering, MRV, or external solver.
-"""
+"""Deterministic row-by-row DFS solver for Nonograms."""
 
 from __future__ import annotations
 

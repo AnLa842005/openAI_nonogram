@@ -36,8 +36,7 @@ class FinishReason(str, Enum):
     """Why a FINISH event was emitted.
 
     A solution is announced by SOLUTION only. SOLVED merely closes a stream
-    which has already emitted SOLUTION. Legacy mock adapters may still use the
-    original completion reasons.
+    which has already emitted SOLUTION.
     """
 
     SOLVED = "solved"
@@ -45,10 +44,6 @@ class FinishReason(str, Enum):
     CANCELLED = "cancelled"
     LIMIT_REACHED = "limit_reached"
     ERROR = "error"
-
-    # Backward-compatible reasons used by the original mock solver.
-    COMPLETED_AFTER_SOLUTION = "completed_after_solution"
-    EXHAUSTED = "exhausted"
 
 
 Clues: TypeAlias = tuple[tuple[int, ...], ...]

@@ -1,92 +1,91 @@
 # Nonograms Studio
 
-A Python 3 desktop application built with **PySide6 Widgets** for generating Nonograms puzzles, playing them manually, and visualizing solver search events.
+Bài tập lớn 1 – Tìm kiếm (Nhập môn Trí tuệ Nhân tạo, CO3061). Chương trình giải
+**Nonograms** bằng hai thuật toán, viết bằng Python 3, có giao diện
+trực quan hóa từng bước bằng PySide6:
 
-The UI uses `QMainWindow`, `QPainter`, `QScrollArea`, Qt stylesheets, and `QTimer`. It does not use QML, a webview, or JavaScript.
+- **DFS** (blind search): gán lần lượt từng hàng, từ trên xuống.
+- **Heuristic**: lan truyền ràng buộc kết hợp MRV, đoán từng ô khi cần.
 
-The project includes two real deterministic solvers: a blind row-by-row DFS
-and a heuristic solver (MRV-guided search with constraint propagation).
-BFS is not implemented.
+## 1. Cài đặt
 
-## Install and run on Windows
-
-Python 3.10 or newer is required.
+Yêu cầu Python ≥ 3.10. Chạy trong thư mục gốc của project:
 
 ```powershell
 py -3 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m nonogram_visualizer.app
+.venv\Scripts\python -m pip install -r requirements.txt
 ```
 
-Run all tests:
+> macOS/Linux: thay `py -3` bằng `python3` và `.venv\Scripts\python` bằng `.venv/bin/python`.
+
+## 2. Chạy test
 
 ```powershell
-$env:QT_QPA_PLATFORM = "offscreen"
-python -m unittest discover -s tests -v
-Remove-Item Env:QT_QPA_PLATFORM
+.venv\Scripts\python -m unittest discover -s tests -v
 ```
 
-`QT_QPA_PLATFORM=offscreen` is only for automated tests or environments without a display. Do not set it for normal Windows use.
+43 test. Một số test quan trọng:
 
-## Interface
+```powershell
+# Cả hai thuật toán phải ra đúng đáp án chính thức của puzzle-nonograms.com
+.venv\Scripts\python -m unittest tests.test_examples -v
 
-- The top toolbar contains puzzle information, New Puzzle, Open, Save, and the Controls panel toggle.
-- The board occupies the main area of the window.
-- The right panel can be closed, moved, or detached. Its contents scroll when vertical space is limited.
-- The status bar provides messages, 50–200% zoom, and Fit to View.
-- The light gray and white theme uses indigo accents, Segoe UI on Windows, and the system font elsewhere.
-- Buttons provide hover, pressed, disabled states, and tooltips.
+# Từng thuật toán: puzzle ngẫu nhiên, trường hợp vô nghiệm, hủy giữa chừng, quay lui
+.venv\Scripts\python -m unittest tests.test_dfs_solver -v
+.venv\Scripts\python -m unittest tests.test_heuristic_solver -v
+```
 
-`BoardWidget` draws the clues and cells on one `QPainter` surface instead of creating a widget per cell. Qt handles device scaling, while pointer mapping uses local surface coordinates so input remains accurate after zooming and scrolling.
+## 3. Mở visualizer
 
-## Play mode
+```powershell
+.venv\Scripts\python -m nonogram_visualizer
+```
 
-- Left-click: `UNKNOWN/EMPTY → FILLED`, `FILLED → UNKNOWN`.
-- Right-click: `UNKNOWN/FILLED → EMPTY`, `EMPTY → UNKNOWN`.
-- A drag stroke uses one target state. Revisiting a cell does not toggle it again, and the entire stroke creates one Undo entry.
-- Undo/Redo is available through buttons or `Ctrl+Z`/`Ctrl+Y`. Shortcuts do not intercept input while a line edit, spin box, combo box, or text edit has focus.
-- **Check** recalculates clues from the current board. `UNKNOWN` counts as white, so players do not have to mark every empty cell with X.
-- Any board satisfying the clues is accepted, even if it differs from the source board used for generation.
-- Mismatched rows and columns are highlighted without claiming that a specific cell is wrong.
-- Clear Board asks for confirmation, then clears the board, timer, and Undo/Redo history.
+1. **New Puzzle → Examples** để chọn một puzzle thật (5×5 → 30×30), hoặc
+   **New Puzzle → Random Puzzle…** để sinh puzzle theo kích thước và seed.
+2. Bấm nút chế độ **Visualize** ở bảng bên phải.
+3. Chọn thuật toán **DFS** hoặc **Heuristic (MRV + propagation)**.
+4. Bấm **Run** để chạy tự động (chỉnh tốc độ bằng thanh trượt), **Pause** để
+   dừng, **Next Step** để xem từng bước, **Reset** để chạy lại từ đầu.
 
-Play and Visualize boards are stored separately. Switching modes preserves Play progress, and the Play timer pauses while Visualize mode is active.
+Bảng bên phải hiển thị bước hiện tại (TRY / ACCEPT / REJECT / BACKTRACK…), số
+nút, số lần quay lui, độ sâu và thời gian chạy của thuật toán.
 
-## Reference examples from puzzle-nonograms.com
+Chế độ **Play** cho phép tự giải bằng chuột: chuột trái tô ô, chuột phải đánh dấu
+trống, bấm **Check** để kiểm tra.
 
-`examples/puzzle-nonograms/` holds real puzzles downloaded from
-[puzzle-nonograms.com](https://www.puzzle-nonograms.com/), one per size:
-5×5, 10×10, 15×15, 20×20, 25×25, the 25×30 Special Daily, and the 30×30 Special Weekly.
-Load them from **New Puzzle → Examples**, or with **Open**.
+## 4. Đo thời gian và bộ nhớ (số liệu cho báo cáo)
 
-Each file keeps the site's raw `task` string and `hashed_solution` in
-`metadata`. The site computes `hashed_solution = md5(task + solution)`, where
-`task` lists column clues first, then row clues (`/` between lines, `.`
-between groups, `0` for an empty line), and `solution` lists the cells row by
-row as `y` (filled) or `n` (empty). `tests/test_examples.py` recomputes that
-hash from each solver's board. A match means the solver found exactly the
-site's official answer, not merely some board that fits the clues. Site
-puzzles have unique solutions; random puzzles from the generator below may not.
+Chạy không giao diện, `--memory` đo thêm bộ nhớ đỉnh bằng `tracemalloc`:
 
-## Random puzzle generation
+```powershell
+.venv\Scripts\python -m nonogram_visualizer.dfs_solver       examples/puzzle-nonograms/15x15.json --memory
+.venv\Scripts\python -m nonogram_visualizer.heuristic_solver examples/puzzle-nonograms/15x15.json --memory
+```
 
-The **New Puzzle** menu provides the random-puzzle dialog, the `Cross 5x5` sample, and the examples above:
+Kết quả in ra gồm trạng thái, số nút, số lần quay lui, độ sâu,
+`solver_time_ms`, bộ nhớ đỉnh và lời giải. Thay tên file để chạy các kích thước
+khác. Lưu ý: DFS trên `25x25.json` và `30x30_special_weekly.json` chạy hơn 2 phút
+chưa xong; Heuristic giải mọi file trong dưới 1 giây.
 
-- 5×5, 10×10, and 15×15 presets;
-- custom dimensions from 2 to 30 in each direction;
-- expected filled-cell density, default 50%; this is not a difficulty setting;
-- an optional integer seed.
+## 5. Cấu trúc project
 
-The generator uses `random.Random(seed)` to create a source board, derives its clues, and initializes the playable board with `UNKNOWN`. The same seed, dimensions, and density produce the same puzzle. If the seed is blank, the generated 64-bit seed appears in the toolbar.
+```text
+nonogram_visualizer/
+  dfs_solver.py         # Thuật toán DFS + sinh mẫu dòng + đo hiệu năng/CLI dùng chung
+  heuristic_solver.py   # Thuật toán Heuristic: lan truyền ràng buộc + MRV
+  models.py             # Puzzle, SearchStep, SearchStats; kiểm tra input JSON
+  solvers.py            # Giao diện Solver chung + chạy thuật toán trên thread riêng
+  generator.py          # Sinh puzzle ngẫu nhiên theo seed
+  board_logic.py        # Logic chế độ Play
+  ui/                   # Giao diện PySide6 (cửa sổ, bàn cờ, bảng điều khiển)
+examples/
+  puzzle-nonograms/     # 7 puzzle thật kèm mã băm đáp án chính thức
+  cross_5x5.json
+tests/                  # unittest cho thuật toán, input, generator và giao diện
+```
 
-The puzzle has at least the source board as a solution, but the generator does not verify uniqueness, count solutions, or estimate difficulty. The main window stores only a `Puzzle` containing clues and metadata. It does not pass the source board to a solver or use it when checking the player board.
-
-A completely white row or column is stored as `[]` and displayed as `0`.
-
-## JSON format
-
-The basic schema remains compatible with the original format:
+Định dạng puzzle (JSON):
 
 ```json
 {
@@ -96,172 +95,19 @@ The basic schema remains compatible with the original format:
 }
 ```
 
-Generated puzzles may include backward-compatible metadata:
+Dòng không có ô tô ghi là `[]`. Puzzle trong `examples/puzzle-nonograms/` có thêm
+`metadata.task` và `metadata.hashed_solution` của trang web; test tính lại
+`md5(task + lời giải)` để so với đáp án chính thức.
 
-```json
-{
-  "name": "Random 10x10",
-  "row_clues": [[2], [], [1, 3]],
-  "col_clues": [[1], [2], []],
-  "metadata": {
-    "generator": "random-board-v1",
-    "seed": 12345,
-    "expected_density": 0.5
-  }
-}
-```
+## 6. Quy ước thống kê
 
-Exported files do not contain the source solution. Validation checks data types, positive clue values, the minimum line length required by each clue, and equal filled-cell totals across row and column clues. These checks do **not** guarantee that an imported puzzle has a solution.
+| Trường | DFS | Heuristic |
+| --- | --- | --- |
+| `nodes_generated` | số lần thử gán một mẫu cho một hàng | số lần thử một giá trị cho ô đoán |
+| `nodes_expanded` | số trạng thái được mở rộng (tính cả gốc) | số lần lan truyền bế tắc, phải đoán |
+| `backtracks` | số lựa chọn bị bỏ vì nhánh con thất bại | như DFS |
+| `max_depth` | số hàng đã gán | số lần đoán lồng nhau |
+| `solver_time_ms` | thời gian tính toán, không gồm thời gian vẽ giao diện | như DFS |
+| `peak_memory_bytes` | bộ nhớ đỉnh (tracemalloc), đo ở lần chạy riêng | như DFS |
 
-## Visualize mode and worker behavior
-
-- Visualize always starts from an `UNKNOWN` board; continuing from the Play board is not supported.
-- DFS and Heuristic are available for every valid puzzle.
-- Run/Pause, Next Step, and Reset are enabled according to the current session state.
-- Pause stops event playback; each Next Step action consumes exactly one event.
-- Animation uses `QTimer` on the Qt main thread. The application does not call `time.sleep()` or run a `processEvents()` loop.
-- The solver runs on a Python worker thread and sends events through `queue.Queue(maxsize=64)` for backpressure.
-- Reset, mode changes, puzzle changes, and application shutdown cooperatively cancel the worker. A session ID rejects late events from older runs.
-- A worker blocked by a full queue checks cancellation with a timeout and exits without `QThread.terminate()`.
-- The UI never treats animation time as `solver_time_ms`. Missing solver statistics display `—`.
-
-## Solver contract
-
-Shared models are defined in `nonogram_visualizer/models.py`:
-
-- `Puzzle`: name, row clues, column clues, and optional JSON metadata.
-- `CellState`: `UNKNOWN = -1`, `EMPTY = 0`, `FILLED = 1`.
-- `SearchStep`: immutable board snapshot, action, optional focus, message, statistics, and optional finish reason.
-- `SearchStats`: nodes expanded/generated, backtracks, maximum depth, solver time, and peak memory; every field may be `None`.
-- `SearchFocus`: row, column, cell, frontier, or state.
-
-Minimum actions: `START`, `TRY`, `ACCEPT`, `REJECT`, `BACKTRACK`, `SOLUTION`, and `FINISH`.
-
-- Only `SOLUTION` announces that a solution was found.
-- `FINISH` distinguishes `SOLVED`, `NO_SOLUTION`, `CANCELLED`,
-  `LIMIT_REACHED`, and `ERROR`. The original `COMPLETED_AFTER_SOLUTION` and
-  `EXHAUSTED` reasons remain available for legacy adapters such as
-  `examples/heuristic_adapter_example.py`.
-- A solver must check `cancel_event` frequently and must never call QWidget or QPainter APIs from its worker thread.
-- `SearchStep` freezes the board at the event boundary, preventing later mutation from changing older snapshots.
-
-See [`examples/heuristic_adapter_example.py`](examples/heuristic_adapter_example.py) for a minimal adapter around an external engine.
-
-The solver implementations are available at:
-
-- [`nonogram_visualizer/dfs_solver.py`](nonogram_visualizer/dfs_solver.py) — DFS, shared benchmark, and shared CLI
-- [`nonogram_visualizer/heuristic_solver.py`](nonogram_visualizer/heuristic_solver.py) — heuristic search
-
-## DFS model and traversal
-
-DFS starts from a completely `UNKNOWN` board and does not read cells entered
-in Play mode or any source board used by the random generator. It generates
-all valid row and column patterns directly by placing clue groups from left to
-right; it never enumerates all `2^length` bit strings. An empty clue has one
-all-white pattern.
-
-The search assigns complete rows in fixed top-to-bottom order. Row patterns
-are tried in deterministic leftmost-group-first order. After assigning row
-`r`, each column candidate set is filtered against its prefix through `r`.
-The branch is rejected as soon as one column has no possible completion.
-Accepted branches recurse to the next row and restore the row to `UNKNOWN`
-when they fail. The first complete solution is checked again by an independent,
-strict 0/1 clue validator before `SOLUTION` is emitted.
-
-This is **DFS with constraint checking and pruning**. Pattern counts and the
-search tree can still grow very quickly, so it does not claim consistently low
-time or memory usage. Pattern storage is scoped to one solve; there is no
-cross-run warm cache. An optional pattern limit produces `LIMIT_REACHED`, never
-a false `NO_SOLUTION` result.
-
-To use it in the UI, switch to **Visualize**, select **DFS**, then use Run,
-Pause, Next Step, and Reset. Event snapshots are immutable and flow through the
-existing bounded worker queue; the UI does not retain the complete search
-history.
-
-## Heuristic model and traversal
-
-The heuristic solver also starts from a completely `UNKNOWN` board and uses
-the same pattern generator, but stores each pattern as a bitmask (bit `i` set
-means cell `i` of the line is filled).
-
-1. **Propagation (line solving).** A queue holds the lines whose cells changed.
-   For each queued line, candidates inconsistent with the known cells are
-   removed with one test per pattern, `(pattern ^ filled) & known == 0`.
-   Cells set in every remaining candidate (AND of all patterns) become
-   `FILLED`; cells set in none (NOT of the OR) become `EMPTY`. Each newly fixed
-   cell queues its crossing line. An empty domain is a contradiction.
-2. **Branching.** When propagation reaches a fixed point with undecided cells,
-   the solver picks the row *or* column with the fewest remaining candidates
-   (Minimum Remaining Values). Within it, it guesses the undecided cell on
-   which the candidates agree most, trying the majority value first. Each node
-   therefore has at most two children.
-3. **Backtracking.** Every cell and domain change is pushed onto a trail. A
-   failed branch pops the trail back to its mark instead of copying the board
-   or domains.
-
-Many published puzzles, including `Cross 5x5`, are solved by root propagation
-alone, so `nodes_generated` is `0`. The limitation is that propagation
-reasons about one line at a time. On ambiguous puzzles with weak deductions
-(for example, random 30×30 boards at 40% density) the search can still go
-deep and backtrack for minutes.
-
-## Headless benchmark
-
-The headless path uses the same solver core with tracing disabled, so it does
-not construct a board snapshot or message for every search step. Both solvers
-share one benchmark and CLI, so they report the same fields:
-
-```powershell
-python -m nonogram_visualizer.dfs_solver examples/cross_5x5.json
-python -m nonogram_visualizer.dfs_solver examples/cross_5x5.json --memory
-python -m nonogram_visualizer.heuristic_solver examples/cross_5x5.json --memory
-```
-
-`solver_time_ms` uses `perf_counter` and includes pattern generation plus DFS,
-but excludes JSON loading, UI work, and animation. `--memory` performs a
-separate cold run under `tracemalloc`; the reported peak is Python allocations,
-not whole-process RSS. Without `--memory`, unavailable peak memory is shown as
-`—`. Tracing is disabled in both benchmark runs.
-
-## Statistics conventions
-
-| Field | Meaning and unit |
-| --- | --- |
-| `nodes_expanded` | Valid incomplete states whose children the solver begins to visit. For DFS this includes the root. For Heuristic it counts only states where propagation stalled and a guess was needed. |
-| `nodes_generated` | Every attempted choice, including immediately rejected ones; the root is not generated. DFS: row patterns. Heuristic: cell guesses. |
-| `backtracks` | Accepted choices abandoned because their child branch failed; immediate `REJECT` choices are not counted. |
-| `max_depth` | Greatest number of simultaneous choices: assigned rows for DFS, nested cell guesses for Heuristic. |
-| `solver_time_ms` | Solver computation time in milliseconds, excluding animation, Pause time, queue waiting, and UI work. |
-| `peak_memory_bytes` | Peak Python allocations in bytes from a separate headless `tracemalloc` run. |
-
-Use `None` for any unavailable statistic. The UI displays it as `—` and never invents a value.
-
-A `BACKTRACK` event is also emitted after restoring an immediately rejected
-row so the animation shows the actual board state. Consequently, the number of
-displayed `BACKTRACK` events can exceed the `backtracks` counter above.
-
-## Project structure
-
-```text
-nonogram_visualizer/
-  app.py                 # Stable entry point
-  models.py              # Shared puzzle and search-event contract
-  generator.py           # Random generation and clue calculation
-  board_logic.py         # Play operations, history, and validation
-  samples.py             # Built-in puzzles
-  solvers.py             # Solver protocol and worker adapter
-  dfs_solver.py          # DFS core, event adapter, shared benchmark and CLI
-  heuristic_solver.py    # MRV + propagation solver
-  ui/
-    board_widget.py      # Scalable QPainter board
-    control_panel.py     # Play and Visualize controls
-    dialogs.py           # Random-puzzle dialog
-    main_window.py       # QMainWindow and session coordination
-    theme.py             # Stylesheet and generated icons
-examples/
-  cross_5x5.json
-  puzzle-nonograms/      # Reference puzzles with official answer hashes
-  heuristic_adapter_example.py
-tests/
-```
+Giá trị không có được hiển thị là `—`.

@@ -741,10 +741,7 @@ class MainWindow(QMainWindow):
             self.visual_state = "finished"
             if step.finish_reason is FinishReason.CANCELLED:
                 self._set_visual_status("Cancelled", "warning")
-            elif step.finish_reason in {
-                FinishReason.NO_SOLUTION,
-                FinishReason.EXHAUSTED,
-            }:
+            elif step.finish_reason is FinishReason.NO_SOLUTION:
                 self._set_visual_status("No solution", "warning")
             elif step.finish_reason is FinishReason.LIMIT_REACHED:
                 self._set_visual_status("Limit reached", "warning")

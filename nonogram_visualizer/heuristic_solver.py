@@ -1,22 +1,4 @@
-"""Heuristic Nonograms solver: MRV-guided DFS with constraint propagation.
-
-Every row and column keeps a domain of candidate patterns stored as bitmasks
-(bit ``i`` set means cell ``i`` of that line is filled). Propagation filters a
-domain against the line's known cells and fixes every cell on which all
-remaining candidates agree; each fixed cell re-queues the crossing line.
-
-When propagation reaches a fixed point without completing the board, the
-search guesses one cell, guided by two heuristics:
-
-- variable ordering: the undecided line with the fewest candidates (Minimum
-  Remaining Values, ``h(line) = |domain|``), then the cell of that line whose
-  candidates agree most;
-- value ordering: the value most of those candidates give the cell.
-
-Branching on a cell gives at most two children per node, unlike branching on
-a whole line pattern. Every change is recorded on a trail and undone on
-backtrack, so no state is ever deep-copied.
-"""
+"""Heuristic Nonograms solver: MRV-guided DFS with constraint propagation."""
 
 from __future__ import annotations
 
